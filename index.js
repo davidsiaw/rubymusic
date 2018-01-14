@@ -277,11 +277,6 @@ function start_html_server(c, connection, logging_channel) {
     res.send(JSON.stringify({playlist: playlist}))
   })
 
-  //"https://astrobunny.net/labs/downloads/idols/wugss-op.mp4"
-  //http://192.168.1.15:3000/playlist/add?url=https://astrobunny.net/labs/downloads/idols/wugss-op.mp4&artist=wug&name=7senses
-  //http://192.168.1.15:3000/playlist/add?url=https://astrobunny.net/labs/downloads/idols/aqours-taioki.mp4&artist=aqours&name=toko
-  //http://192.168.1.15:3000/playlist/add?url=https://astrobunny.net/labs/downloads/music/super_scription_of_data.mp3&artist=higurashi&name=superscription
-
   app.get('/play', (req, res) => {
     send(logging_channel, "[START]", "Start requested");
     play_music(c, connection, logging_channel)
