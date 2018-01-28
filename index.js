@@ -6,6 +6,8 @@ const express = require('express');
 const listen_port = process.env.API_PORT || 3000;
 const fs = require('fs');
 
+const SECRET_TOKEN = process.env.SECRET_TOKEN;
+
 var stop_requested = false;
 var current_playing_url = "";
 var current_stream = null;
@@ -230,6 +232,14 @@ function get_status_json() {
 
 function start_html_server(c, connection, logging_channel) {
   const app = express();
+
+  app.use(function (req, res, next) {
+    if (req.query.token === SECRET_TOKEN)
+    {
+      return next();
+    }
+    res.status(404).send("not found")
+  });
 
   app.get('/', (req, res) => {
     res.send(get_status_json())
