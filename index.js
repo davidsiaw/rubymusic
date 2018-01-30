@@ -5,6 +5,7 @@ const WebSocket = require('ws');
 const express = require('express');
 const listen_port = process.env.API_PORT || 3000;
 const fs = require('fs');
+const bodyParser = require('body-parser');
 
 const SECRET_TOKEN = process.env.SECRET_TOKEN;
 
@@ -236,18 +237,21 @@ function start_html_server(c, connection, logging_channel) {
   app.use(function (req, res, next) {
     if (req.query.token === SECRET_TOKEN)
     {
-      return next();
+        next();
+        return;
     }
     res.status(404).send("not found")
   });
 
+  app.use(bodyParser.text({ type: 'application/json' }));
+
   app.get('/', (req, res) => {
     res.send(get_status_json())
-  })
+  });
 
   app.get('/playlist', (req, res) => {
     res.send(JSON.stringify({playlist: playlist}))
-  })
+  });
 
   app.get('/playlist/add', (req, res) => {
     if (!req.query.url)
@@ -258,7 +262,25 @@ function start_html_server(c, connection, logging_channel) {
     playlist.push({url: req.query.url, name: req.query.name, artist: req.query.artist})
     save_state()
     res.send(JSON.stringify({playlist: playlist}))
-  })
+  });
+
+  app.put('/playlist', (req, res) => {
+    var body = JSON.parse(req.body)
+    var new_playlist = [];
+    for (var key in body.playlist)
+    {
+      var song = body.playlist[key];
+      if (!song.url || !song.name || !song.artist_name)
+      {
+        res.status(400).send("invalid") 
+        return;
+      }
+      new_playlist.push({url: song.url, name: song.name, artist: song.artist_name});
+    }
+    playlist = new_playlist;
+    save_state();
+    res.send(JSON.stringify({playlist: playlist}))
+  });
 
   app.get('/playlist/clear', (req, res) => {
     playlist = []

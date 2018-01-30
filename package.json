@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "body-parser": "^1.18.2",
     "discord.js": "github:hydrabolt/discord.js#11.1-dev",
     "express": "^4.16.2",
     "icy": "^2.1.0",
