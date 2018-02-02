@@ -114,6 +114,7 @@ function setup_events(current_stream, c, connection, icy_type, logging_channel, 
   current_stream.on("error", function(e) {
     send(logging_channel, "[SETUP]", "errored!");
     send(logging_channel, "[SETUP]", e);
+    console.log(e);
     if (!stop_requested)
     {
       if (current_stream.totalStreamTime > 5000 && !flag_stop_if_error)
