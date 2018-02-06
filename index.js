@@ -192,9 +192,14 @@ function play_music(c, connection, logging_channel)
   var item = playlist[playlist_idx]
   start(c, connection, false, logging_channel, item.url);
 
-  client.user.setGame(item.name + " - " + item.artist).then(
+  client.user.setActivity(item.name + " - " + item.artist, {
+    type: "LISTENING",
+    url: "https://astrobunny.net"
+  }).then(
 
     (successMessage) => {
+
+      console.log(successMessage)
 
   }).catch(
 
