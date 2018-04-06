@@ -6,8 +6,24 @@ const express = require('express');
 const listen_port = process.env.API_PORT || 3000;
 const fs = require('fs');
 const bodyParser = require('body-parser');
+const ytdl = require('ytdl-core');
+const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
+const { URL } = require('url');
+const proto = {
+  'http:': require('http'),
+  'https:': require('https')
+}
+const fileType = require('file-type');
+var jsmediatags = require("jsmediatags");
 
 const SECRET_TOKEN = process.env.SECRET_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const HAS_NEXTCLOUD_DB = process.env.NEXTCLOUD_DB_HOST !== undefined;
+const NEXTCLOUD_DB_HOST = process.env.NEXTCLOUD_DB_HOST;
+const NEXTCLOUD_DB_PORT = process.env.NEXTCLOUD_DB_PORT || 5432;
+const HOME_URL = process.env.HOME_URL;
+
+const MAX_SONG_LIST_DISPLAY_LENGTH = 8
 
 var stop_requested = false;
 var current_playing_url = "";
@@ -18,6 +34,19 @@ var flag_stop_if_error = false;
 var playlist_idx = -1;
 var playlist = [];
 
+var blacklist = {};
+var command_hash = {};
+
+function shuffle(a) {
+    var j, x, i;
+    for (i = a.length - 1; i > 0; i--) {
+        j = Math.floor(Math.random() * (i + 1));
+        x = a[i];
+        a[i] = a[j];
+        a[j] = x;
+    }
+}
+
 function save_state()
 {
   var state = {
@@ -25,7 +54,8 @@ function save_state()
     playlist: playlist,
     flag_continue: flag_continue,
     flag_stop_if_error: flag_stop_if_error,
-    playing: current_stream !== null
+    playing: current_stream !== null,
+    blacklist: blacklist
   }
   fs.writeFile("config", JSON.stringify(state), function(err) {
       if (err) {
@@ -48,6 +78,7 @@ function load_state(on_playing)
       playlist = state.playlist
       flag_continue = state.flag_continue
       flag_stop_if_error = state.flag_stop_if_error
+      blacklist = state.blacklist || {}
       if (state.playing && on_playing)
       {
         on_playing();
@@ -114,7 +145,6 @@ function setup_events(current_stream, c, connection, icy_type, logging_channel, 
   current_stream.on("error", function(e) {
     send(logging_channel, "[SETUP]", "errored!");
     send(logging_channel, "[SETUP]", e);
-    console.log(e);
     if (!stop_requested)
     {
       if (current_stream.totalStreamTime > 5000 && !flag_stop_if_error)
@@ -144,7 +174,7 @@ function setup_events(current_stream, c, connection, icy_type, logging_channel, 
   current_playing_url = url;
 }
 
-function start(c, connection, icy_type, logging_channel, url)
+function start(c, connection, icy_type, logging_channel, url, type)
 {
   if (icy_type)
   {
@@ -169,8 +199,17 @@ function start(c, connection, icy_type, logging_channel, url)
   }
   else
   {
-    current_stream = connection.playArbitraryInput(url);
-    save_state()
+    if (type === "YOUTUBE")
+    {
+      const streamOptions = { seek: 0, volume: 1 };
+      const stream = ytdl(url, { filter : 'audioonly' });
+      current_stream = connection.playStream(stream, streamOptions);
+    }
+    else
+    {
+      current_stream = connection.playArbitraryInput(url);
+    }
+    save_state();
     setup_events(current_stream, c, connection, icy_type, logging_channel, url);
   }
 }
@@ -190,7 +229,7 @@ function play_music(c, connection, logging_channel)
 
   playlist_idx = (playlist_idx + 1) % playlist.length
   var item = playlist[playlist_idx]
-  start(c, connection, false, logging_channel, item.url);
+  start(c, connection, false, logging_channel, item.url, item.type);
 
   client.user.setActivity(item.name + " - " + item.artist, {
     type: "LISTENING",
@@ -198,8 +237,7 @@ function play_music(c, connection, logging_channel)
   }).then(
 
     (successMessage) => {
-
-      console.log(successMessage)
+      console.log("Successfully set message")
 
   }).catch(
 
@@ -216,7 +254,7 @@ function stop_music(logging_channel)
     stop_requested = true;
     current_stream.end();
     current_stream = null;
-    save_state()
+    save_state();
   }
 }
 
@@ -237,8 +275,25 @@ function get_status_json() {
 
 }
 
+var LOG_CHAN = null;
+
 function start_html_server(c, connection, logging_channel) {
   const app = express();
+
+  LOG_CHAN = logging_channel;
+
+  app.all('/public/*', (req, res) => {
+    var reply = "<pre>\n";
+
+    for(var i=0;i<playlist.length;i++)
+    {
+      var idx = (i + playlist_idx) % playlist.length;
+      reply += (i+1) + ". " + playlist[idx].name + " - " + playlist[idx].artist + "\n";
+    }
+
+    reply += "</pre>";
+    res.send(reply)
+  });  
 
   app.use(function (req, res, next) {
     if (req.query.token === SECRET_TOKEN)
@@ -281,7 +336,7 @@ function start_html_server(c, connection, logging_channel) {
         res.status(400).send("invalid") 
         return;
       }
-      new_playlist.push({url: song.url, name: song.name, artist: song.artist_name});
+      new_playlist.push({url: song.url, name: song.name, artist: song.artist_name, type: "FILE"});
     }
     playlist = new_playlist;
     save_state();
@@ -335,6 +390,230 @@ function start_html_server(c, connection, logging_channel) {
       play_music(c, connection, logging_channel)
     })
   })
+
+
+  function register_user_command(command, func)
+  {
+    command_hash[command] = func;
+  }
+
+  register_user_command("help", (message, m) => {
+    var reply = "these are the commands available:\n```\n";
+    reply += "help    - displays this message\n";
+    reply += "queue   - displays the current playlist\n";
+    reply += "np      - states the current playing song\n";
+    reply += "next    - skips to the next song\n";
+    reply += "clear   - clears the playlist and stops playback\n";
+    reply += "add     - add a song. Type 'help add' to find out more!\n";
+    reply += "delet   - remove a song. Type 'help delet' to find out more!\n";
+    reply += "restart - restart the bot. usually fixes all problems\n";
+    reply += "```\n";
+
+    if (message === "add")
+    {
+      reply = "How to use add:\n```";
+      reply += "USAGE: @coney add <url of youtube link or mp3>\n";
+      reply += "\n";
+      reply += "Example:\n";
+      reply += "@coney add https://www.youtube.com/watch?v=L0rA_AKMtBc\n";
+      reply += "```\n";
+    }
+
+    if (message === "delet")
+    {
+      reply = "How to use delet:\n```";
+      reply += "USAGE: @coney delet <number to delete>\n";
+      reply += "\n";
+      reply += "The number is the number seen when you use @coney queue\n";
+      reply += "\n";
+      reply += "Example:\n";
+      reply += "@coney delet 1\n";
+      reply += "```\n";
+    }
+    m.reply(reply);
+  });
+
+  register_user_command("queue", (message, m) => {
+    var reply = "Current queue is on repeat:\n```"
+    for(var i=0;i<Math.min(playlist.length, MAX_SONG_LIST_DISPLAY_LENGTH);i++)
+    {
+      var idx = (i + playlist_idx) % playlist.length;
+      reply += (i+1) + ". " + playlist[idx].name + " - " + playlist[idx].artist + "\n";
+    }
+    if (playlist.length > MAX_SONG_LIST_DISPLAY_LENGTH)
+    {
+      var num = playlist.length - MAX_SONG_LIST_DISPLAY_LENGTH;
+      reply += "and " + num + " more song"+(num === 1 ? "": "s")+"...\n"
+    }
+    reply += "```"
+    if (playlist.length > MAX_SONG_LIST_DISPLAY_LENGTH)
+    {
+      reply += "see " + HOME_URL + "/public/playlist"
+    }
+    m.reply(reply);
+  })
+
+  register_user_command("np", (message, m) => {
+    var reply = "I am now playing: `" + playlist[playlist_idx].name + " - " + playlist[playlist_idx].artist + "`";
+    m.reply(reply);
+  });
+
+  register_user_command("next", (message, m) => {
+    var reply = "Moving to next song.";
+    stop_music(logging_channel)
+    setTimeout(function(){
+      play_music(c, connection, logging_channel);
+    }, 2000);
+    m.reply(reply);
+  });
+
+  register_user_command("clear", (message, m) => {
+
+    var reply = "Cleared playlist.";
+    playlist = [];
+    stop_music(logging_channel);
+    m.reply(reply);
+  });
+
+  register_user_command("delet", (message, m) => {
+
+    if (message.length === 0)
+    {
+      m.reply("please type `help delet` to find out how to use this command.");
+      return;
+    }
+
+    var idx = ((parseInt(message) - 1) + playlist_idx) % playlist.length;
+    if (idx < 0 || idx >= playlist.length)
+    {
+      m.reply("invalid number, please type `help delet` to find out how to use this command.");
+      return;
+    }
+    var thing = playlist[idx];
+    playlist.splice(idx, 1);
+    m.reply("removed " + thing.name);
+  });
+
+  register_user_command("add", (message, m) => {
+
+    function url_exists(url, callback)
+    {
+        var xhr = new XMLHttpRequest();
+        xhr.open('HEAD', url);
+        xhr.onreadystatechange = function() {
+            if (this.readyState == this.DONE) {
+              callback(this.status == 200);
+            }
+        };
+        xhr.send();
+    }
+
+    if (message.length === 0)
+    {
+      m.reply("please type `help add` to find out how to use this command.");
+      return;
+    }
+
+    url_exists(message, function(isgood)
+    {
+      if (isgood)
+      {
+        const stream = ytdl.getInfo(message, function(err, info)
+        {
+
+          function complete()
+          {          
+            if (!current_stream)
+            {
+              play_music(c, connection, logging_channel);
+            }
+            else
+            {
+              save_state();
+            }
+          }
+
+          if (err)
+          {
+            // normal file?
+            const url = new URL(message);
+            proto[url.protocol].get(url, res => {
+              res.once('data', chunk => {
+                var type = fileType(chunk);
+
+                if (type.mime === "video/mp4")
+                {
+                  var p = url.pathname.split("/");
+                  var name = p[p.length-1];
+                  playlist.push({
+                    url: message,
+                    name: name,
+                    artist: "File",
+                    type: "FILE"
+                  });
+                  m.reply("added: " + name);
+                  complete();
+                }
+                else if (type.mime.indexOf("audio") === 0)
+                {
+                  new jsmediatags.Reader(message)
+                    .setTagsToRead(["title", "artist"])
+                    .read({
+                      onSuccess: function(tag) {
+                        var name = tag.tags.title || "Unknown title";
+                        var artist = tag.tags.artist || "Unknown artist";
+                        playlist.push({
+                          url: message,
+                          name: name,
+                          artist: artist,
+                          type: "FILE"
+                        });
+                        m.reply("added: " + name + " - " + artist);
+                        complete();
+                      },
+                      onError: function(error) {
+                        send(logging_channel, "[ERROR]", message, "[MSG]", error)
+                        m.reply("error reading " + message);
+                      }
+                    });
+                }
+                else
+                {
+                  m.reply("Unknown file type: " + type.mime);
+                }
+
+                res.destroy();
+                console.log();
+              });
+            });
+          }
+          else
+          {
+            // youtube vid
+            playlist.push({
+              url: message,
+              name: info.title,
+              artist: "Youtube",
+              type: "YOUTUBE"
+            })
+
+            m.reply("Youtube file `" + info.title + "` added!");
+            complete();
+          }
+
+
+        });
+
+        //
+      }
+      else
+      {
+        m.reply("`" + message + "` is not a valid URL");
+      }
+    });
+
+  });
+
 }
 
 client.on('ready', () => {
@@ -355,19 +634,51 @@ client.on('ready', () => {
 
 });
 
-client.on('message', message => {
-  //console.log("[MSG]", message.author, message.content);
-  if (message.content === 'ruby restart' && message.author.id == "122908555178147840")
+function handle_admin_message(message, m)
+{
+  if (message === 'restart')
   {
-    message.reply('Okie~ be right back!');
+    m.reply('Okie~ be right back!');
     client.destroy();
+    save_state();
     setTimeout(() => {
       process.exit();
     }, 1000);
-    
+  }
+}
+
+function handle_user_message(message, m)
+{
+  if (LOG_CHAN)
+  {
+    send(LOG_CHAN, "[MSG]", "from: <@" + m.author.id + ">", message);
+  }
+
+  const command = message.split(" ")[0];
+  if (command_hash[command])
+  {
+    command_hash[command](message.replace(command+" ", ""), m);
+  }
+}
+
+
+client.on('message', message => {
+
+  //console.log("[MSG]", message.author, message.content);
+  const id_front = '<@'+CLIENT_ID+'> ';
+  if (message.content.indexOf(id_front) == 0)
+  {
+    if (message.author.id == "122908555178147840")
+    {
+      handle_admin_message(message.content.replace(id_front, ""), message);
+    }
+
+    if (blacklist[message.author.id] === undefined || blacklist[message.author.id] === false)
+    {
+      handle_user_message(message.content.replace(id_front, ""), message);
+    } 
   }
 });
-
 
 
 client.login(process.env.BOT_TOKEN);
