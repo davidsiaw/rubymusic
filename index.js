@@ -30,6 +30,7 @@ var current_playing_url = "";
 var current_stream = null;
 var flag_continue = true;
 var flag_stop_if_error = false;
+var last_restart_time = 0;
 
 var playlist_idx = -1;
 var playlist = [];
@@ -55,7 +56,8 @@ function save_state()
     flag_continue: flag_continue,
     flag_stop_if_error: flag_stop_if_error,
     playing: current_stream !== null,
-    blacklist: blacklist
+    blacklist: blacklist,
+    last_restart_time: last_restart_time
   }
   fs.writeFile("config", JSON.stringify(state), function(err) {
       if (err) {
@@ -79,6 +81,7 @@ function load_state(on_playing)
       flag_continue = state.flag_continue
       flag_stop_if_error = state.flag_stop_if_error
       blacklist = state.blacklist || {}
+      last_restart_time = state.last_restart_time || 0
       if (state.playing && on_playing)
       {
         on_playing();
@@ -492,6 +495,24 @@ function start_html_server(c, connection, logging_channel) {
     var thing = playlist[idx];
     playlist.splice(idx, 1);
     m.reply("removed " + thing.name);
+  });
+
+  register_user_command("restart", (message, m) => {
+    var now = (new Date).getTime();
+    if (now - last_restart_time < 1000 * 60 * 5)
+    {
+      m.reply('Okie~ be right back!');
+      client.destroy();
+      last_restart_time = now;
+      save_state();
+      setTimeout(() => {
+        process.exit();
+      }, 5000);
+    }
+    else
+    {
+      m.reply('Please wait 5 minutes before restarting again.');
+    }
   });
 
   register_user_command("add", (message, m) => {
