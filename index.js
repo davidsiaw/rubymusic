@@ -48,7 +48,7 @@ function shuffle(a) {
     }
 }
 
-function save_state()
+function save_state(on_complete)
 {
   var state = {
     playlist_idx: playlist_idx,
@@ -64,6 +64,10 @@ function save_state()
           return console.log(err);
       }
       console.log("Config saved!");
+      if (on_complete)
+      {
+        on_complete();        
+      }
   }); 
 }
 
@@ -415,22 +419,22 @@ function start_html_server(c, connection, logging_channel) {
     if (message === "add")
     {
       reply = "How to use add:\n```";
-      reply += "USAGE: @coney add <url of youtube link or mp3>\n";
+      reply += "USAGE: @" + client.user.username + " add <url of youtube link or mp3>\n";
       reply += "\n";
       reply += "Example:\n";
-      reply += "@coney add https://www.youtube.com/watch?v=L0rA_AKMtBc\n";
+      reply += "@" + client.user.username + " add https://www.youtube.com/watch?v=L0rA_AKMtBc\n";
       reply += "```\n";
     }
 
     if (message === "delet")
     {
       reply = "How to use delet:\n```";
-      reply += "USAGE: @coney delet <number to delete>\n";
+      reply += "USAGE: @" + client.user.username + " delet <number to delete>\n";
       reply += "\n";
-      reply += "The number is the number seen when you use @coney queue\n";
+      reply += "The number is the number seen when you use @" + client.user.username + " queue\n";
       reply += "\n";
       reply += "Example:\n";
-      reply += "@coney delet 1\n";
+      reply += "@" + client.user.username + " delet 1\n";
       reply += "```\n";
     }
     m.reply(reply);
