@@ -521,6 +521,20 @@ function start_html_server(c, connection, logging_channel) {
 
   register_user_command("add", (message, m) => {
 
+    var extra_tokens = message.split(";").filter(Boolean);
+
+    var custom = {}
+
+    for (var idx=1; idx < extra_tokens.length; idx++)
+    {
+      var toks = extra_tokens[idx].split("=", 2);
+      custom[toks[0]] = toks[1];
+    }
+
+    message = extra_tokens[0]
+
+    console.log(custom);
+
     function url_exists(url, callback)
     {
         var xhr = new XMLHttpRequest();
@@ -570,13 +584,14 @@ function start_html_server(c, connection, logging_channel) {
                 {
                   var p = url.pathname.split("/");
                   var name = p[p.length-1];
-                  playlist.push({
+                  var songmeta = {
                     url: message,
-                    name: name,
-                    artist: "File",
+                    name: custom.name || name,
+                    artist: custom.artist || "File",
                     type: "FILE"
-                  });
-                  m.reply("added: " + name);
+                  };
+                  playlist.push(songmeta);
+                  m.reply("added: " + songmeta.name + " - " + songmeta.artist);
                   complete();
                 }
                 else if (type.mime.indexOf("audio") === 0)
@@ -585,8 +600,8 @@ function start_html_server(c, connection, logging_channel) {
                     .setTagsToRead(["title", "artist"])
                     .read({
                       onSuccess: function(tag) {
-                        var name = tag.tags.title || "Unknown title";
-                        var artist = tag.tags.artist || "Unknown artist";
+                        var name = (tag.tags.title || custom.name) || "Unknown title";
+                        var artist = (tag.tags.artist || custom.artist) || "Unknown artist";
                         playlist.push({
                           url: message,
                           name: name,
@@ -679,7 +694,7 @@ function handle_user_message(message, m)
     send(LOG_CHAN, "[MSG]", "from: <@" + m.author.id + ">", message);
   }
 
-  const command = message.split(" ")[0];
+  const command = message.split(" ").filter(Boolean)[0];
   if (command_hash[command])
   {
     command_hash[command](message.replace(command+" ", ""), m);

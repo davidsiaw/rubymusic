@@ -14,5 +14,8 @@
     "xmlhttprequest": "^1.8.0",
     "ytdl-core": "^0.20.2",
     "zlib-sync": "^0.1.0"
+  },
+  "devDependencies": {
+    "opusscript": "0.0.6"
   }
 }
