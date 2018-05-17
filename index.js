@@ -196,7 +196,7 @@ function start(c, connection, icy_type, logging_channel, url, type)
         send(logging_channel, "```\n", parsed, "\n```");
       });
 
-      current_stream = connection.playStream(res, function(err, str) {
+      current_stream = connection.play(res, function(err, str) {
         send(logging_channel, "[STRIMERROR]", err); 
         send(logging_channel, "[STRIM]", str);
       } );
@@ -210,11 +210,11 @@ function start(c, connection, icy_type, logging_channel, url, type)
     {
       const streamOptions = { seek: 0, volume: 1 };
       const stream = ytdl(url, { filter : 'audioonly' });
-      current_stream = connection.playStream(stream, streamOptions);
+      current_stream = connection.play(stream, streamOptions);
     }
     else
     {
-      current_stream = connection.playArbitraryInput(url);
+      current_stream = connection.play(url);
     }
     save_state();
     setup_events(current_stream, c, connection, icy_type, logging_channel, url);
