@@ -1,4 +1,4 @@
-FROM mhart/alpine-node
+FROM mhart/alpine-node:8.12.0
 
 RUN mkdir -p /srv
 COPY provision.sh /provision.sh
