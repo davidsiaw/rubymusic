@@ -1,12 +1,5 @@
-FROM mhart/alpine-node:8.12.0
+FROM davidsiaw/musicbot-base
 
-RUN mkdir -p /srv
-COPY provision.sh /provision.sh
-COPY package-lock.json package.json run.sh /srv/
-RUN sh /provision.sh
-
-COPY index.js /srv/index.js
-
+COPY index.js run.sh /srv/
 WORKDIR /srv
-
 CMD ["sh", "run.sh"]
